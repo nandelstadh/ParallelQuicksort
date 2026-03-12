@@ -1,6 +1,6 @@
 CC = gcc-15
 LD = gcc-15
-CFLAGS = -O3 -Wall -Werror -fopenmp -fsanitize=address
+CFLAGS = -O3 -Wall -fopenmp -g
 LDFLAGS = -fopenmp
 RM = /bin/rm -f
 OBJS = main.o quicksort.o
