@@ -87,7 +87,6 @@ void gsortHelper(int* localLists[], int localLen[], int* r_bufs[], int* m_bufs[]
         /* printf("The pivot is %d: \n", pivots[group_id]); */
         /* printf("Here we have partition of id %d and pair_id %d: %ld and %ld\n ", id, pair_id, partitions[id], partitions[pair_id]); */
 
-// This barrier is only for debugging
 #pragma omp barrier
 
         int r_buf_len;
