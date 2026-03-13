@@ -1,6 +1,6 @@
 CC = gcc-15
 LD = gcc-15
-CFLAGS = -O3 -Wall -fopenmp 
+CFLAGS = -Ofast -Wall -fopenmp 
 LDFLAGS = -fopenmp
 RM = /bin/rm -f
 OBJS = main.o quicksort.o
