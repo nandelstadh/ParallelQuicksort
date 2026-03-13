@@ -43,7 +43,6 @@ void mergeData(int* localLists[], int localLen[], int m_buf[], int left_list[], 
 
     int a = 0;
     int b = 0;
-    int comp = 0;
 
     for (int i = 0; i < localLen[id]; i++) {
         if (a >= left_len)
