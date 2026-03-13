@@ -7,18 +7,18 @@
 #include <string.h>
 
 // Normal < comparison for qsort
-int compare(const void* a, const void* b) { return (*(int*)a - *(int*)b); }
+int compare(const void* a, const void* b) { return (*(double*)a - *(double*)b); }
 
 // Wrapper for sequentially sorting lists
-void seqSort(int arr[], int N) { qsort(arr, N, sizeof(int), compare); }
+void seqSort(double arr[], int N) { qsort(arr, N, sizeof(double), compare); }
 
 // Sets each pivot to the median of the data in the first processor of each group.
-void pivotFinderA(int group_id, int arr[], int localLen, int pivots[]) {
+void pivotFinderA(int group_id, double arr[], int localLen, double pivots[]) {
     pivots[group_id] = arr[localLen / 2];
 }
 
 // Binary search to find pivot positions
-int binarySearch(int arr[], int start, int length, int key) {
+int binarySearch(double arr[], int start, int length, int key) {
     int left = start;
     int right = start + length;
     while (left < right) {
@@ -35,7 +35,7 @@ int binarySearch(int arr[], int start, int length, int key) {
 }
 
 // Merges sorted lists into a bigger sorted list in a buffer
-void mergeData(int* localLists[], int localLen[], int m_buf[], int left_list[], int left_len, int right_list[], int right_len, int id) {
+void mergeData(double* localLists[], int localLen[], double m_buf[], double left_list[], int left_len, double right_list[], int right_len, int id) {
     localLen[id] = left_len + right_len;
 
     int a = 0;
@@ -56,10 +56,10 @@ void mergeData(int* localLists[], int localLen[], int m_buf[], int left_list[], 
     }
 }
 
-void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_threads, int iter) {
+void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, int n_threads, int iter) {
     int group_size = n_threads >> iter;
     int group_num = n_threads / group_size;
-    int pivots[group_num];
+    double pivots[group_num];
     long partitions[n_threads];
 
 #pragma omp parallel num_threads(n_threads)
@@ -84,8 +84,8 @@ void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_
 
         int right_len;
         int left_len;
-        int* left_list;
-        int* right_list;
+        double* left_list;
+        double* right_list;
 
         // Exchanging information about lengths of lower and upper lists to be exchanged
         if (id < pair_id) {
@@ -106,18 +106,18 @@ void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_
         // Merging the data into our merger buffer
         mergeData(localLists, localLen, m_bufs[id], left_list, left_len, right_list, right_len, id);
 
-        int* temp = localLists[id];
+        double* temp = localLists[id];
         localLists[id] = m_bufs[id];
         m_bufs[id] = temp;
     }
 }
 
-void gsort(int arr[], int N, int n_threads) {
+void gsort(double arr[], int N, int n_threads) {
     int block_size = N / n_threads;
     int remainder = N % n_threads;
-    int* localLists[n_threads];
+    double* localLists[n_threads];
     int localLen[n_threads];
-    int* m_bufs[n_threads];
+    double* m_bufs[n_threads];
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -133,13 +133,13 @@ void gsort(int arr[], int N, int n_threads) {
         }
 
         // Splitting and sorting the lists locally
-        int* localList = malloc(N * sizeof(int));
-        memcpy(localList, arr + start, length * sizeof(int));
+        double* localList = malloc(N * sizeof(double));
+        memcpy(localList, arr + start, length * sizeof(double));
         localLists[id] = localList;
         localLen[id] = length;
         seqSort(localList, length);
 
-        int* m_buf = malloc(N * sizeof(int));
+        double* m_buf = malloc(N * sizeof(double));
         m_bufs[id] = m_buf;
     }
 
@@ -151,7 +151,7 @@ void gsort(int arr[], int N, int n_threads) {
     // Finally copying the local lists into the original array
     int location = 0;
     for (int i = 0; i < n_threads; i++) {
-        memcpy(arr + location, localLists[i], localLen[i] * sizeof(int));
+        memcpy(arr + location, localLists[i], localLen[i] * sizeof(double));
         location += localLen[i];
     }
 

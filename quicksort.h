@@ -1,1 +1,1 @@
-void gsort(int arr[], int N, int n_threads);
+void gsort(double arr[], int N, int n_threads);

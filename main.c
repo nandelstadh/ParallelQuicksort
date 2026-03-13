@@ -13,7 +13,7 @@ static double get_wall_seconds() {
     return seconds;
 }
 
-static int count_values(const int* list, int n, int x) {
+static int count_values(const double* list, int n, int x) {
     int count = 0;
     int i;
     for (i = 0; i < n; i++) {
@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
         printf("Error: (N < 1).\n");
         return -1;
     }
-    int* list_to_sort = (int*)malloc(N * sizeof(int));
+    double* list_to_sort = (double*)malloc(N * sizeof(double));
     int i;
     for (i = 0; i < N; i++) list_to_sort[i] = rand() % 100;
     int count7 = count_values(list_to_sort, N, 7);
