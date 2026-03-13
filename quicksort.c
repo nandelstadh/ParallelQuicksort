@@ -6,22 +6,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-void swap(int* a, int* b) {
-    int temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
+// Normal < comparison for qsort
 int compare(const void* a, const void* b) { return (*(int*)a - *(int*)b); }
 
+// Wrapper for sequentially sorting lists
 void seqSort(int arr[], int N) { qsort(arr, N, sizeof(int), compare); }
 
-// Sets each pivot to the median of the data in the first processor of each
-// group. Should be optimized later with a better algorithm maybe
+// Sets each pivot to the median of the data in the first processor of each group.
 void pivotFinderA(int group_id, int arr[], int localLen, int pivots[]) {
     pivots[group_id] = arr[localLen / 2];
 }
 
+// Binary search to find pivot positions
 int binarySearch(int arr[], int start, int length, int key) {
     int left = start;
     int right = start + length;
@@ -38,6 +34,7 @@ int binarySearch(int arr[], int start, int length, int key) {
     return left;
 }
 
+// Merges sorted lists into a bigger sorted list in a buffer
 void mergeData(int* localLists[], int localLen[], int m_buf[], int left_list[], int left_len, int right_list[], int right_len, int id) {
     localLen[id] = left_len + right_len;
 
@@ -83,16 +80,14 @@ void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_
 
         // Part d. Merge data from pair into sorted list
 
-        /* printf("Group_num: %d; Group_size: %d; Group_id: %d; Group_start: %d; Id: %d; Pair_Id: %d\n", group_num, group_size, group_id, group_start, id, pair_id); */
-        /* printf("The pivot is %d: \n", pivots[group_id]); */
-        /* printf("Here we have partition of id %d and pair_id %d: %ld and %ld\n ", id, pair_id, partitions[id], partitions[pair_id]); */
-
 #pragma omp barrier
 
         int right_len;
         int left_len;
         int* left_list;
         int* right_list;
+
+        // Exchanging information about lengths of lower and upper lists to be exchanged
         if (id < pair_id) {
             // We receive lower list
             left_list = localLists[id];
@@ -108,7 +103,7 @@ void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_
         }
 
 #pragma omp barrier
-        // Finally, we merge the data into our merger buffer
+        // Merging the data into our merger buffer
         mergeData(localLists, localLen, m_bufs[id], left_list, left_len, right_list, right_len, id);
 
         int* temp = localLists[id];
@@ -117,9 +112,6 @@ void gsortHelper(int* localLists[], int localLen[], int* m_bufs[], int N, int n_
     }
 }
 
-/* void gsort(int arr[], int N, int n_threads) { */
-/*     seqSort(arr, N); */
-/* } */
 void gsort(int arr[], int N, int n_threads) {
     int block_size = N / n_threads;
     int remainder = N % n_threads;
@@ -129,6 +121,7 @@ void gsort(int arr[], int N, int n_threads) {
 
 #pragma omp parallel num_threads(n_threads)
     {
+        // Splitting lists evenly between threads
         int id = omp_get_thread_num();
         int start, length;
         if (id < remainder) {
@@ -139,6 +132,7 @@ void gsort(int arr[], int N, int n_threads) {
             length = block_size;
         }
 
+        // Splitting and sorting the lists locally
         int* localList = malloc(N * sizeof(int));
         memcpy(localList, arr + start, length * sizeof(int));
         localLists[id] = localList;
@@ -149,10 +143,12 @@ void gsort(int arr[], int N, int n_threads) {
         m_bufs[id] = m_buf;
     }
 
+    // Main recursive loop
     for (int i = 0; i < log2(n_threads); i++) {
         gsortHelper(localLists, localLen, m_bufs, N, n_threads, i);
     }
 
+    // Finally copying the local lists into the original array
     int location = 0;
     for (int i = 0; i < n_threads; i++) {
         memcpy(arr + location, localLists[i], localLen[i] * sizeof(int));
