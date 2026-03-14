@@ -13,8 +13,30 @@ int compare(const void* a, const void* b) { return (*(double*)a - *(double*)b); 
 void seqSort(double arr[], int N) { qsort(arr, N, sizeof(double), compare); }
 
 // Sets each pivot to the median of the data in the first processor of each group.
-void pivotFinderA(int group_id, double arr[], int localLen, double pivots[]) {
-    pivots[group_id] = arr[localLen / 2];
+void pivotFinderA(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
+    int id = group_size * group_id;
+    pivots[group_id] = localLists[id][localLen[id] / 2];
+}
+
+// Mean of medians.
+void pivotFinderB(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
+    double median = 0;
+    for (int i = 0; i < group_size; i++) {
+        int id = group_size * group_id + i;
+        median += localLists[id][localLen[id] / 2];
+    }
+    pivots[group_id] = median / group_size;
+}
+
+// Mean of middlemost medians.
+void pivotFinderC(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
+    double medians[group_size];
+    for (int i = 0; i < group_size; i++) {
+        int id = group_size * group_id + i;
+        medians[i] = localLists[id][localLen[id] / 2];
+    }
+    qsort(medians, group_size, sizeof(double), compare);
+    pivots[group_id] = (medians[group_size / 2] + medians[group_size / 2 - 1]) / 2;
 }
 
 // Binary search to find pivot positions
@@ -69,7 +91,7 @@ void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, 
         int group_start = group_id * group_size;
         // a. Select pivot
         if (id % group_size == 0)
-            pivotFinderA(group_id, localLists[id], localLen[id], pivots);
+            pivotFinderC(group_id, localLists, localLen, pivots, group_size);
 
 #pragma omp barrier
         // b. Divide into smaller and larger
