@@ -1,6 +1,5 @@
 #include "quicksort.h"
 
-#include <math.h>
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,14 +59,12 @@ int binarySearch(double arr[], int start, int length, double key) {
     return left;
 }
 
-// Merges sorted lists into a bigger sorted list in a buffer
-void mergeData(double* localLists[], int localLen[], double m_buf[], double left_list[], int left_len, double right_list[], int right_len, int id) {
-    localLen[id] = left_len + right_len;
-
+// Merges two sorted lists into a sorted output buffer
+void mergeData(double m_buf[], double left_list[], int left_len, double right_list[], int right_len) {
     int a = 0;
     int b = 0;
-
-    for (int i = 0; i < localLen[id]; i++) {
+    int out_len = left_len + right_len;
+    for (int i = 0; i < out_len; i++) {
         if (a >= left_len)
             m_buf[i] = right_list[b++];
 
@@ -82,11 +79,16 @@ void mergeData(double* localLists[], int localLen[], double m_buf[], double left
     }
 }
 
-void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, int n_threads, int iter) {
+void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, int nextOffset[], int nextLen[], int n_threads, int iter) {
     int group_size = n_threads >> iter;
     int group_num = n_threads / group_size;
     double pivots[group_num];
-    long partitions[n_threads];
+    int partitions[n_threads];
+    double* localLists[n_threads];
+
+    for (int i = 0; i < n_threads; i++) {
+        localLists[i] = src + localOffset[i];
+    }
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -95,7 +97,7 @@ void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, 
         int group_start = group_id * group_size;
         // a. Select pivot
         if (id % group_size == 0)
-            pivotFinderC(group_id, localLists, localLen, pivots, group_size);
+            pivotFinderA(group_id, localLists, localLen, pivots, group_size);
 
 #pragma omp barrier
         // b. Divide into smaller and larger
@@ -108,8 +110,7 @@ void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, 
 
 #pragma omp barrier
 
-        int right_len;
-        int left_len;
+        int right_len, left_len;
         double* left_list;
         double* right_list;
 
@@ -128,22 +129,41 @@ void gsortHelper(double* localLists[], int localLen[], double* m_bufs[], int N, 
             right_len = localLen[pair_id] - partitions[pair_id];
         }
 
-#pragma omp barrier
-        // Merging the data into our merger buffer
-        mergeData(localLists, localLen, m_bufs[id], left_list, left_len, right_list, right_len, id);
+        nextLen[id] = left_len + right_len;
 
-        double* temp = localLists[id];
-        localLists[id] = m_bufs[id];
-        m_bufs[id] = temp;
+#pragma omp barrier
+
+#pragma omp single
+        {
+            nextOffset[0] = 0;
+            for (int i = 1; i < n_threads; i++) {
+                nextOffset[i] = nextOffset[i - 1] + nextLen[i - 1];
+            }
+        }
+
+#pragma omp barrier
+
+        mergeData(dst + nextOffset[id], left_list, left_len, right_list, right_len);
     }
 }
 
 void gsort(double arr[], int N, int n_threads) {
+    if (N <= n_threads || n_threads <= 1) {
+        seqSort(arr, N);
+        return;
+    }
+
     int block_size = N / n_threads;
     int remainder = N % n_threads;
-    double* localLists[n_threads];
-    int localLen[n_threads];
-    double* m_bufs[n_threads];
+    int localOffsetA[n_threads], localOffsetB[n_threads];
+    int localLenA[n_threads], localLenB[n_threads];
+    int* localOffset = localOffsetA;
+    int* nextOffset = localOffsetB;
+    int* localLen = localLenA;
+    int* nextLen = localLenB;
+    int iterations = 0;
+
+    double* temp = malloc((size_t)N * sizeof(double));
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -158,34 +178,38 @@ void gsort(double arr[], int N, int n_threads) {
             length = block_size;
         }
 
-        // Splitting and sorting the lists locally
-        double* localList = malloc(N * sizeof(double));
-        memcpy(localList, arr + start, length * sizeof(double));
-        localLists[id] = localList;
+        // Sort each thread's local segment in-place.
+        localOffset[id] = start;
         localLen[id] = length;
-        seqSort(localList, length);
-
-        double* m_buf = malloc(N * sizeof(double));
-        m_bufs[id] = m_buf;
+        seqSort(arr + start, length);
     }
 
-    // Main recursive loop
-    for (int i = 0; i < log2(n_threads); i++) {
-        gsortHelper(localLists, localLen, m_bufs, N, n_threads, i);
+    for (int size = n_threads; size > 1; size >>= 1) {
+        iterations++;
     }
 
-    // Finally copying the local lists into the original array
-    int location = 0;
-    for (int i = 0; i < n_threads; i++) {
-        memcpy(arr + location, localLists[i], localLen[i] * sizeof(double));
-        location += localLen[i];
+    double* src = arr;
+    double* dst = temp;
+
+    for (int i = 0; i < iterations; i++) {
+        gsortHelper(src, localOffset, localLen, dst, nextOffset, nextLen, n_threads, i);
+
+        double* tmpBuf = src;
+        src = dst;
+        dst = tmpBuf;
+
+        int* tmpOffset = localOffset;
+        localOffset = nextOffset;
+        nextOffset = tmpOffset;
+
+        int* tmpLen = localLen;
+        localLen = nextLen;
+        nextLen = tmpLen;
     }
 
-//  Freeing the lists and buffers
-#pragma omp parallel num_threads(n_threads)
-    {
-        int id = omp_get_thread_num();
-        free(localLists[id]);
-        free(m_bufs[id]);
+    if (src != arr) {
+        memcpy(arr, src, (size_t)N * sizeof(double));
     }
+
+    free(temp);
 }

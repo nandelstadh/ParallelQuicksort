@@ -63,21 +63,21 @@ int main(int argc, char* argv[]) {
     double* list_to_sort = (double*)malloc(N * sizeof(double));
 
     // Creating uniformly distributed list
-    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100; */
+    for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100;
 
     // Creating normally distributed list
     /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_normal(); */
 
     // Creating exponentially distributed list
-    for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1);
+    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1); */
 
     int count7 = count_values(list_to_sort, N, 7);
     printf("Before sort: the number 7 occurs %d times in the list.\n", count7);
 
     // Sort list
     double time1 = get_wall_seconds();
-    /* gsort(list_to_sort, N, NUM_THREADS); */
-    seqSort(list_to_sort, N);
+    gsort(list_to_sort, N, NUM_THREADS);
+    /* seqSort(list_to_sort, N); */
     printf("Sorting list with length %d took %7.3f wall seconds.\n", N,
            get_wall_seconds() - time1);
 
