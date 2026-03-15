@@ -76,7 +76,8 @@ int main(int argc, char* argv[]) {
 
     // Sort list
     double time1 = get_wall_seconds();
-    gsort(list_to_sort, N, NUM_THREADS);
+    /* gsort(list_to_sort, N, NUM_THREADS); */
+    seqSort(list_to_sort, N);
     printf("Sorting list with length %d took %7.3f wall seconds.\n", N,
            get_wall_seconds() - time1);
 

@@ -8,7 +8,6 @@
 
 // Normal < comparison for qsort
 int compare(const void* a, const void* b) {
-    int compare_doubles(const void* a, const void* b);
     double da = *(const double*)a;
     double db = *(const double*)b;
     return (da > db) - (da < db);
