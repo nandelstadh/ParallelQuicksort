@@ -7,7 +7,12 @@
 #include <string.h>
 
 // Normal < comparison for qsort
-int compare(const void* a, const void* b) { return (*(double*)a - *(double*)b); }
+int compare(const void* a, const void* b) {
+    int compare_doubles(const void* a, const void* b);
+    double da = *(const double*)a;
+    double db = *(const double*)b;
+    return (da > db) - (da < db);
+}
 
 // Wrapper for sequentially sorting lists
 void seqSort(double arr[], int N) { qsort(arr, N, sizeof(double), compare); }
@@ -40,7 +45,7 @@ void pivotFinderC(int group_id, double* localLists[], int localLen[], double piv
 }
 
 // Binary search to find pivot positions
-int binarySearch(double arr[], int start, int length, int key) {
+int binarySearch(double arr[], int start, int length, double key) {
     int left = start;
     int right = start + length;
     while (left < right) {
