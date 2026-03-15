@@ -97,7 +97,7 @@ void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, in
         int group_start = group_id * group_size;
         // a. Select pivot
         if (id % group_size == 0)
-            pivotFinderA(group_id, localLists, localLen, pivots, group_size);
+            pivotFinderC(group_id, localLists, localLen, pivots, group_size);
 
 #pragma omp barrier
         // b. Divide into smaller and larger
