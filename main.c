@@ -5,7 +5,7 @@
 
 #include "quicksort.h"
 
-#define NUM_THREADS 8
+int T;
 
 static double get_wall_seconds() {
     struct timeval tv;
@@ -43,16 +43,8 @@ double rand_expo(double lambda) {
 
 int main(int argc, char* argv[]) {
     // Verifying correctness of macros and arguments
-    if ((NUM_THREADS & (NUM_THREADS - 1)) != 0) {
-        printf("NUM_THREADS must be a power of 2\n");
-        return -1;
-    }
-    if (NUM_THREADS <= 0) {
-        printf("NUM_THREADS must be nonnegative\n");
-        return -1;
-    }
-    if (argc != 3) {
-        printf("Please give 2 arguments: N (number of elements to sort), D (u, n, e for unif, normal and exp distributions resp.).\n");
+    if (argc != 4) {
+        printf("Please give 2 arguments: N (number of elements to sort), D (u, n, e for unif, normal and exp distributions resp.), T (number of threads).\n");
         return -1;
     }
     int N = atoi(argv[1]);
@@ -87,11 +79,21 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    int T = atoi(argv[3]);
+    if ((T & (T - 1)) != 0) {
+        printf("T must be a power of 2\n");
+        return -1;
+    }
+    if (T <= 0) {
+        printf("T must be nonnegative\n");
+        return -1;
+    }
+
     printf("List sorting starts\n");
 
     // Sort list
     double time1 = get_wall_seconds();
-    double* sorted = gsort(list_to_sort, N, NUM_THREADS);
+    double* sorted = gsort(list_to_sort, N, T);
     if (sorted != list_to_sort) {
         free(list_to_sort);
         list_to_sort = sorted;
