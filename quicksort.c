@@ -80,7 +80,8 @@ void mergeData(double m_buf[], double left_list[], int left_len, double right_li
     }
 }
 
-void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, int nextOffset[], int nextLen[], int n_threads, int iter) {
+// Helper function responsible for recursion in gsort
+void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter) {
     int group_size = n_threads >> iter;
     int group_num = n_threads / group_size;
     double pivots[group_num];
@@ -88,7 +89,7 @@ void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, in
     double* localLists[n_threads];
 
     for (int i = 0; i < n_threads; i++) {
-        localLists[i] = src + localOffset[i];
+        localLists[i] = arr + localOffset[i];
     }
 
 #pragma omp parallel num_threads(n_threads)
@@ -134,6 +135,7 @@ void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, in
 
 #pragma omp barrier
 
+// Recompute where the data lies in the buffer and merge
 #pragma omp single
         {
             nextOffset[0] = 0;
@@ -142,7 +144,7 @@ void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, in
             }
         }
 
-        mergeData(dst + nextOffset[id], left_list, left_len, right_list, right_len);
+        mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
     }
 }
 
@@ -162,7 +164,7 @@ void gsort(double arr[], int N, int n_threads) {
     int* nextLen = localLenB;
     int iterations = log2(n_threads);
 
-    double* temp = malloc((size_t)N * sizeof(double));
+    double* temp = malloc(N * sizeof(double));
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -183,28 +185,31 @@ void gsort(double arr[], int N, int n_threads) {
         seqSort(arr + start, length);
     }
 
-    double* src = arr;
-    double* dst = temp;
+    double* buffer = temp;
 
     for (int i = 0; i < iterations; i++) {
-        gsortHelper(src, localOffset, localLen, dst, nextOffset, nextLen, n_threads, i);
+        // Recursively call the helper function
+        gsortHelper(arr, localOffset, localLen, buffer, nextOffset, nextLen, n_threads, i);
 
-        double* tmpBuf = src;
-        src = dst;
-        dst = tmpBuf;
+        // Set the src array to equal the dst array
+        double* tmpBuf = arr;
+        arr = buffer;
+        buffer = tmpBuf;
 
+        // Change offsets
         int* tmpOffset = localOffset;
         localOffset = nextOffset;
         nextOffset = tmpOffset;
 
+        // Change lengths
         int* tmpLen = localLen;
         localLen = nextLen;
         nextLen = tmpLen;
     }
 
-    if (src != arr) {
-        memcpy(arr, src, (size_t)N * sizeof(double));
-    }
+    /* if (src != arr) { */
+    /*     memcpy(arr, src, N * sizeof(double)); */
+    /* } */
 
     free(temp);
 }

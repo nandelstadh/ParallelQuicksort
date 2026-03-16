@@ -74,10 +74,10 @@ int main(int argc, char* argv[]) {
     double* list_to_sort = (double*)malloc(N * sizeof(double));
 
     // Creating uniformly distributed list
-    for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100;
+    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100; */
 
     // Creating normally distributed list
-    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_normal(); */
+    for (int i = 0; i < N; i++) list_to_sort[i] = rand_normal();
 
     // Creating exponentially distributed list
     /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1); */
