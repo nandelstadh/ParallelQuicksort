@@ -80,73 +80,63 @@ void mergeData(double m_buf[], double left_list[], int left_len, double right_li
     }
 }
 
-// Helper function responsible for recursion in gsort
-void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter) {
+// Helper function for one iteration inside the active gsort parallel region.
+void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter, int id,
+                 double pivots[], int partitions[], double* localLists[]) {
     int group_size = n_threads >> iter;
-    int group_num = n_threads / group_size;
-    double pivots[group_num];
-    int partitions[n_threads];
-    double* localLists[n_threads];
+    int group_id = id / group_size;
+    int group_start = group_id * group_size;
 
-    for (int i = 0; i < n_threads; i++) {
-        localLists[i] = arr + localOffset[i];
+    localLists[id] = arr + localOffset[id];
+
+#pragma omp barrier
+    // a. Select pivot
+    if (id % group_size == 0)
+        pivotFinderC(group_id, localLists, localLen, pivots, group_size);
+
+#pragma omp barrier
+    // b. Divide into smaller and larger
+    partitions[id] = binarySearch(localLists[id], 0, localLen[id], pivots[group_id]);
+
+    // c. Split processors into two groups and exchange data pairwise
+    int pair_id = group_start + ((id - group_start + (group_size >> 1)) % group_size);
+
+#pragma omp barrier
+    int right_len, left_len;
+    double* left_list;
+    double* right_list;
+
+    // Exchanging information about lengths of lower and upper lists to be exchanged
+    if (id < pair_id) {
+        // We receive lower list
+        left_list = localLists[id];
+        left_len = partitions[id];
+        right_list = localLists[pair_id];
+        right_len = partitions[pair_id];
+    } else {
+        // We receive higher list
+        left_list = localLists[id] + partitions[id];
+        left_len = localLen[id] - partitions[id];
+        right_list = localLists[pair_id] + partitions[pair_id];
+        right_len = localLen[pair_id] - partitions[pair_id];
     }
 
-#pragma omp parallel num_threads(n_threads)
-    {
-        int id = omp_get_thread_num();
-        int group_id = id / group_size;
-        int group_start = group_id * group_size;
-        // a. Select pivot
-        if (id % group_size == 0)
-            pivotFinderC(group_id, localLists, localLen, pivots, group_size);
+    nextLen[id] = left_len + right_len;
 
 #pragma omp barrier
-        // b. Divide into smaller and larger
-        partitions[id] = binarySearch(localLists[id], 0, localLen[id], pivots[group_id]);
-
-        // c. Split processors into two groups and exchange data pairwise
-        int pair_id = group_start + ((id - group_start + (group_size >> 1)) % group_size);
-
-        // Part d. Merge data from pair into sorted list
-
-#pragma omp barrier
-
-        int right_len, left_len;
-        double* left_list;
-        double* right_list;
-
-        // Exchanging information about lengths of lower and upper lists to be exchanged
-        if (id < pair_id) {
-            // We receive lower list
-            left_list = localLists[id];
-            left_len = partitions[id];
-            right_list = localLists[pair_id];
-            right_len = partitions[pair_id];
-        } else {
-            // We receive higher list
-            left_list = localLists[id] + partitions[id];
-            left_len = localLen[id] - partitions[id];
-            right_list = localLists[pair_id] + partitions[pair_id];
-            right_len = localLen[pair_id] - partitions[pair_id];
-        }
-
-        nextLen[id] = left_len + right_len;
-
-#pragma omp barrier
-
 #pragma omp single
-        // Recompute where the data lies in the buffer
-        {
-            nextOffset[0] = 0;
-            for (int i = 1; i < n_threads; i++) {
-                nextOffset[i] = nextOffset[i - 1] + nextLen[i - 1];
-            }
+    // Recompute where the data lies in the buffer
+    {
+        nextOffset[0] = 0;
+        for (int i = 1; i < n_threads; i++) {
+            nextOffset[i] = nextOffset[i - 1] + nextLen[i - 1];
         }
-
-        // Merging the data in the buffer
-        mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
     }
+
+    // Merging the data in the buffer
+    mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
+
+#pragma omp barrier
 }
 
 double* gsort(double arr[], int N, int n_threads) {
@@ -164,6 +154,9 @@ double* gsort(double arr[], int N, int n_threads) {
     int* localLen = localLenA;
     int* nextLen = localLenB;
     int iterations = log2(n_threads);
+    int partitions[n_threads];
+    double* localLists[n_threads];
+    double pivots[n_threads];
 
     double* temp = malloc(N * sizeof(double));
     double* buffer = temp;
@@ -185,26 +178,29 @@ double* gsort(double arr[], int N, int n_threads) {
         localOffset[id] = start;
         localLen[id] = length;
         seqSort(arr + start, length);
-    }
 
-    for (int i = 0; i < iterations; i++) {
-        // Recursively call the helper function
-        gsortHelper(arr, localOffset, localLen, buffer, nextOffset, nextLen, n_threads, i);
+        for (int i = 0; i < iterations; i++) {
+            // Perform one iteration of group split/merge inside this parallel region.
+            gsortHelper(arr, localOffset, localLen, buffer, nextOffset, nextLen, n_threads, i, id, pivots, partitions, localLists);
 
-        // Set the src array to equal the dst array
-        double* tmpBuf = arr;
-        arr = buffer;
-        buffer = tmpBuf;
+#pragma omp single
+            {
+                // Set the src array to equal the dst array
+                double* tmpBuf = arr;
+                arr = buffer;
+                buffer = tmpBuf;
 
-        // Change offsets
-        int* tmpOffset = localOffset;
-        localOffset = nextOffset;
-        nextOffset = tmpOffset;
+                // Change offsets
+                int* tmpOffset = localOffset;
+                localOffset = nextOffset;
+                nextOffset = tmpOffset;
 
-        // Change lengths
-        int* tmpLen = localLen;
-        localLen = nextLen;
-        nextLen = tmpLen;
+                // Change lengths
+                int* tmpLen = localLen;
+                localLen = nextLen;
+                nextLen = tmpLen;
+            }
+        }
     }
 
     if (arr != temp) {
