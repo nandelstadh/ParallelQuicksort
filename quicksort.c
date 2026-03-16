@@ -150,6 +150,7 @@ void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer,
 }
 
 double* gsort(double arr[], int N, int n_threads) {
+    // If we only have one thread, we sort sequentially
     if (N <= n_threads || n_threads <= 1) {
         seqSort(arr, N);
         return arr;
@@ -157,8 +158,7 @@ double* gsort(double arr[], int N, int n_threads) {
 
     int block_size = N / n_threads;
     int remainder = N % n_threads;
-    int localOffsetA[n_threads], localOffsetB[n_threads];
-    int localLenA[n_threads], localLenB[n_threads];
+    int localOffsetA[n_threads], localOffsetB[n_threads], localLenA[n_threads], localLenB[n_threads];
     int* localOffset = localOffsetA;
     int* nextOffset = localOffsetB;
     int* localLen = localLenA;
@@ -166,6 +166,7 @@ double* gsort(double arr[], int N, int n_threads) {
     int iterations = log2(n_threads);
 
     double* temp = malloc(N * sizeof(double));
+    double* buffer = temp;
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -185,8 +186,6 @@ double* gsort(double arr[], int N, int n_threads) {
         localLen[id] = length;
         seqSort(arr + start, length);
     }
-
-    double* buffer = temp;
 
     for (int i = 0; i < iterations; i++) {
         // Recursively call the helper function
