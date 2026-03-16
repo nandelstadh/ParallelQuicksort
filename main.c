@@ -48,7 +48,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     int N = atoi(argv[1]);
-    printf("N = %d\n", N);
+    /* printf("N = %d\n", N); */
     if (N < 1) {
         printf("Error: (N < 1).\n");
         return -1;
@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
     double* list_to_sort = (double*)malloc(N * sizeof(double));
 
     char D = argv[2][0];
-    printf("D = %c\n", D);
+    /* printf("D = %c\n", D); */
     if (D == 'u') {
         // Creating uniformly distributed list
         for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100;
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    printf("List sorting starts\n");
+    /* printf("List sorting starts\n"); */
 
     // Sort list
     double time1 = get_wall_seconds();
@@ -99,10 +99,11 @@ int main(int argc, char* argv[]) {
         list_to_sort = sorted;
     }
     /* seqSort(list_to_sort, N); */
-    printf("Sorting list with length %d took %7.3f wall seconds.\n", N,
-           get_wall_seconds() - time1);
+    /* printf("Sorting list with length %d took %7.3f wall seconds.\n", N, get_wall_seconds() - time1); */
 
-    printf("List sorting finishes\n");
+    printf("%7.3f\n", get_wall_seconds() - time1);
+
+    /* printf("List sorting finishes\n"); */
 
     // Check that list is really sorted
     for (int i = 0; i < N - 1; i++) {
@@ -111,7 +112,7 @@ int main(int argc, char* argv[]) {
             return -1;
         }
     }
-    printf("OK, list is sorted!\n");
+    /* printf("OK, list is sorted!\n"); */
 
     free(list_to_sort);
 
