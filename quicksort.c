@@ -1,5 +1,6 @@
 #include "quicksort.h"
 
+#include <math.h>
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,8 +142,6 @@ void gsortHelper(double* src, int localOffset[], int localLen[], double* dst, in
             }
         }
 
-#pragma omp barrier
-
         mergeData(dst + nextOffset[id], left_list, left_len, right_list, right_len);
     }
 }
@@ -161,7 +160,7 @@ void gsort(double arr[], int N, int n_threads) {
     int* nextOffset = localOffsetB;
     int* localLen = localLenA;
     int* nextLen = localLenB;
-    int iterations = 0;
+    int iterations = log2(n_threads);
 
     double* temp = malloc((size_t)N * sizeof(double));
 
@@ -182,10 +181,6 @@ void gsort(double arr[], int N, int n_threads) {
         localOffset[id] = start;
         localLen[id] = length;
         seqSort(arr + start, length);
-    }
-
-    for (int size = n_threads; size > 1; size >>= 1) {
-        iterations++;
     }
 
     double* src = arr;

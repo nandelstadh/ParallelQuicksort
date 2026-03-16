@@ -14,8 +14,8 @@ static double get_wall_seconds() {
     return seconds;
 }
 
-static int count_values(const double* list, int n, int x) {
-    int count = 0;
+static double count_values(const double* list, int n, int x) {
+    double count = 0;
     int i;
     for (i = 0; i < n; i++) {
         if (list[i] == x) count++;
@@ -50,6 +50,15 @@ double rand_expo(double lambda) {
 }
 
 int main(int argc, char* argv[]) {
+    // Verifying correctness of macros and arguments
+    if ((NUM_THREADS & (NUM_THREADS - 1)) != 0) {
+        printf("NUM_THREADS must be a power of 2\n");
+        return -1;
+    }
+    if (NUM_THREADS <= 0) {
+        printf("NUM_THREADS must be nonnegative\n");
+        return -1;
+    }
     if (argc != 2) {
         printf("Please give 1 argument: N (number of elements to sort).\n");
         return -1;
@@ -60,6 +69,8 @@ int main(int argc, char* argv[]) {
         printf("Error: (N < 1).\n");
         return -1;
     }
+
+    // Allocating list on size N
     double* list_to_sort = (double*)malloc(N * sizeof(double));
 
     // Creating uniformly distributed list
@@ -71,7 +82,7 @@ int main(int argc, char* argv[]) {
     // Creating exponentially distributed list
     /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1); */
 
-    int count7 = count_values(list_to_sort, N, 7);
+    int count7 = count_values(list_to_sort, N, 7.0);
     printf("Before sort: the number 7 occurs %d times in the list.\n", count7);
 
     // Sort list
@@ -81,7 +92,7 @@ int main(int argc, char* argv[]) {
     printf("Sorting list with length %d took %7.3f wall seconds.\n", N,
            get_wall_seconds() - time1);
 
-    int count7_again = count_values(list_to_sort, N, 7);
+    int count7_again = count_values(list_to_sort, N, 7.0);
     printf("After sort : the number 7 occurs %d times in the list.\n",
            count7_again);
 
