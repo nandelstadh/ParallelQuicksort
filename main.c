@@ -14,27 +14,19 @@ static double get_wall_seconds() {
     return seconds;
 }
 
-static double count_values(const double* list, int n, int x) {
-    double count = 0;
-    int i;
-    for (i = 0; i < n; i++) {
-        if (list[i] == x) count++;
-    }
-    return count;
-}
-
 double rand_normal() {
     static double n2 = 0.0;
     static int n2_cached = 0;
     if (!n2_cached) {
         double x, y, r;
         do {
-            x = (rand() % 2) - 1;
-            y = (rand() % 2) - 1;
+            x = 2.0 * (rand() / (RAND_MAX + 1.0)) - 1.0;
+            y = 2.0 * (rand() / (RAND_MAX + 1.0)) - 1.0;
             r = x * x + y * y;
         } while (r == 0.0 || r > 1.0);
         double d = sqrt(-2.0 * log(r) / r);
-        double n1 = x * d, n2 = y * d;
+        double n1 = x * d;
+        n2 = y * d;
         n2_cached = 1;
         return n1;
     } else {
@@ -59,8 +51,8 @@ int main(int argc, char* argv[]) {
         printf("NUM_THREADS must be nonnegative\n");
         return -1;
     }
-    if (argc != 2) {
-        printf("Please give 1 argument: N (number of elements to sort).\n");
+    if (argc != 3) {
+        printf("Please give 2 arguments: N (number of elements to sort), D (u, n, e for unif, normal and exp distributions resp.).\n");
         return -1;
     }
     int N = atoi(argv[1]);
@@ -73,28 +65,42 @@ int main(int argc, char* argv[]) {
     // Allocating list on size N
     double* list_to_sort = (double*)malloc(N * sizeof(double));
 
-    // Creating uniformly distributed list
-    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100; */
+    char D = argv[2][0];
+    printf("D = %c\n", D);
+    if (D == 'u') {
+        // Creating uniformly distributed list
+        for (int i = 0; i < N; i++) list_to_sort[i] = rand() % 100;
+    }
 
-    // Creating normally distributed list
-    for (int i = 0; i < N; i++) list_to_sort[i] = rand_normal();
+    else if (D == 'n') {
+        // Creating normally distributed list
+        for (int i = 0; i < N; i++) list_to_sort[i] = rand_normal();
+    }
 
-    // Creating exponentially distributed list
-    /* for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1); */
+    else if (D == 'e') {
+        // Creating exponentially distributed list
+        for (int i = 0; i < N; i++) list_to_sort[i] = rand_expo(1);
+    }
 
-    int count7 = count_values(list_to_sort, N, 7.0);
-    printf("Before sort: the number 7 occurs %d times in the list.\n", count7);
+    else {
+        printf("Invalid distribution. Valid types are u, n, e.\n");
+        return -1;
+    }
+
+    printf("List sorting starts\n");
 
     // Sort list
     double time1 = get_wall_seconds();
-    gsort(list_to_sort, N, NUM_THREADS);
+    double* sorted = gsort(list_to_sort, N, NUM_THREADS);
+    if (sorted != list_to_sort) {
+        free(list_to_sort);
+        list_to_sort = sorted;
+    }
     /* seqSort(list_to_sort, N); */
     printf("Sorting list with length %d took %7.3f wall seconds.\n", N,
            get_wall_seconds() - time1);
 
-    int count7_again = count_values(list_to_sort, N, 7.0);
-    printf("After sort : the number 7 occurs %d times in the list.\n",
-           count7_again);
+    printf("List sorting finishes\n");
 
     // Check that list is really sorted
     for (int i = 0; i < N - 1; i++) {

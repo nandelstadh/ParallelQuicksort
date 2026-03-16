@@ -135,8 +135,8 @@ void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer,
 
 #pragma omp barrier
 
-// Recompute where the data lies in the buffer and merge
 #pragma omp single
+        // Recompute where the data lies in the buffer
         {
             nextOffset[0] = 0;
             for (int i = 1; i < n_threads; i++) {
@@ -144,14 +144,15 @@ void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer,
             }
         }
 
+        // Merging the data in the buffer
         mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
     }
 }
 
-void gsort(double arr[], int N, int n_threads) {
+double* gsort(double arr[], int N, int n_threads) {
     if (N <= n_threads || n_threads <= 1) {
         seqSort(arr, N);
-        return;
+        return arr;
     }
 
     int block_size = N / n_threads;
@@ -207,9 +208,9 @@ void gsort(double arr[], int N, int n_threads) {
         nextLen = tmpLen;
     }
 
-    /* if (src != arr) { */
-    /*     memcpy(arr, src, N * sizeof(double)); */
-    /* } */
+    if (arr != temp) {
+        free(temp);
+    }
 
-    free(temp);
+    return arr;
 }
