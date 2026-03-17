@@ -62,7 +62,9 @@ void gsortHelper(double arr[], int N, int n_threads, int id, double** localLists
     int local_id = id % n_threads;
     int group_id = id / n_threads;
 
-    pivots[group_id] = selectPivot(localLists[id], localLen[id]);
+    if (local_id == 0) {
+        pivots[group_id] = selectPivot(localLists[id], localLen[id]);
+    }
 
 #pragma omp barrier
 
@@ -107,7 +109,7 @@ void gsortHelper(double arr[], int N, int n_threads, int id, double** localLists
     localLists[id] = nextLists[id];
     localLen[id] = nextLen[id];
 
-#pragma omp barrier
+    /* #pragma omp barrier */
 
     gsortHelper(arr, N, n_threads / 2, id, localLists, nextLists, localLen, nextLen, partitions, pivots);
 }
