@@ -33,14 +33,14 @@ void pivotFinderB(int group_id, double* localLists[], int localLen[], double piv
 }
 
 // Mean of middlemost medians.
-void pivotFinderC(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
+double pivotFinderC(int group_id, double* localLists[], int localLen[], int group_size) {
     double medians[group_size];
     for (int i = 0; i < group_size; i++) {
         int id = group_size * group_id + i;
         medians[i] = localLists[id][localLen[id] / 2];
     }
     qsort(medians, group_size, sizeof(double), compare);
-    pivots[group_id] = (medians[group_size / 2] + medians[group_size / 2 - 1]) / 2;
+    return (medians[group_size / 2] + medians[group_size / 2 - 1]) / 2;
 }
 
 // Binary search to find pivot positions
@@ -81,27 +81,26 @@ void mergeData(double m_buf[], double left_list[], int left_len, double right_li
 }
 
 // Helper function for one iteration inside the active gsort parallel region.
-void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter, int id,
-                 double pivots[], int partitions[], double* localLists[]) {
+void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter, int partitions[], double* localLists[], int id) {
+    int local_id = n_threads % id;
     int group_size = n_threads >> iter;
-    int group_id = id / group_size;
+    int group_id = id / n_threads;
     int group_start = group_id * group_size;
 
     localLists[id] = arr + localOffset[id];
 
-#pragma omp barrier
+    if (n_threads == 1) return;
+
     // a. Select pivot
-    if (id % group_size == 0)
-        pivotFinderC(group_id, localLists, localLen, pivots, group_size);
+    double pivot;
+    if (local_id == 0) {
+        pivot = pivotFinderC(group_id, localLists, localLen, group_size);
+    }
 
 #pragma omp barrier
-    // b. Divide into smaller and larger
-    partitions[id] = binarySearch(localLists[id], 0, localLen[id], pivots[group_id]);
-
-    // c. Split processors into two groups and exchange data pairwise
-    int pair_id = group_start + ((id - group_start + (group_size >> 1)) % group_size);
-
+    partitions[id] = binarySearch(localLists[id], 0, localLen[id], pivot);
 #pragma omp barrier
+
     int right_len, left_len;
     double* left_list;
     double* right_list;
@@ -121,17 +120,7 @@ void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer,
         right_len = localLen[pair_id] - partitions[pair_id];
     }
 
-    nextLen[id] = left_len + right_len;
-
-#pragma omp barrier
-#pragma omp single
     // Recompute where the data lies in the buffer
-    {
-        nextOffset[0] = 0;
-        for (int i = 1; i < n_threads; i++) {
-            nextOffset[i] = nextOffset[i - 1] + nextLen[i - 1];
-        }
-    }
 
     // Merging the data in the buffer
     mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
@@ -179,28 +168,22 @@ double* gsort(double arr[], int N, int n_threads) {
         localLen[id] = length;
         seqSort(arr + start, length);
 
-        for (int i = 0; i < iterations; i++) {
-            // Perform one iteration of group split/merge inside this parallel region.
-            gsortHelper(arr, localOffset, localLen, buffer, nextOffset, nextLen, n_threads, i, id, pivots, partitions, localLists);
+        // Perform one iteration of group split/merge inside this parallel region.
 
-#pragma omp single
-            {
-                // Set the src array to equal the dst array
-                double* tmpBuf = arr;
-                arr = buffer;
-                buffer = tmpBuf;
-
-                // Change offsets
-                int* tmpOffset = localOffset;
-                localOffset = nextOffset;
-                nextOffset = tmpOffset;
-
-                // Change lengths
-                int* tmpLen = localLen;
-                localLen = nextLen;
-                nextLen = tmpLen;
-            }
-        }
+        // Set the src array to equal the dst array
+        /* double* tmpBuf = arr; */
+        /* arr = buffer; */
+        /* buffer = tmpBuf; */
+        /**/
+        /* // Change offsets */
+        /* int* tmpOffset = localOffset; */
+        /* localOffset = nextOffset; */
+        /* nextOffset = tmpOffset; */
+        /**/
+        /* // Change lengths */
+        /* int* tmpLen = localLen; */
+        /* localLen = nextLen; */
+        /* nextLen = tmpLen; */
     }
 
     if (arr != temp) {
