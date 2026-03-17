@@ -33,11 +33,12 @@ void pivotFinderB(int group_id, double* localLists[], int localLen[], double piv
 }
 
 // Mean of middlemost medians.
-double pivotFinderC(int group_id, double* localLists[], int localLen[], int group_size) {
+double pivotFinderC(int group_id, double localLists[], int localLen[], int group_size) {
     double medians[group_size];
     for (int i = 0; i < group_size; i++) {
         int id = group_size * group_id + i;
-        medians[i] = localLists[id][localLen[id] / 2];
+        // The choice of index here is clearly wrong, we need to think about how to do this when the recursive logic works
+        medians[i] = localLists[localLen[id] / 2];
     }
     qsort(medians, group_size, sizeof(double), compare);
     return (medians[group_size / 2] + medians[group_size / 2 - 1]) / 2;
@@ -81,20 +82,17 @@ void mergeData(double m_buf[], double left_list[], int left_len, double right_li
 }
 
 // Helper function for one iteration inside the active gsort parallel region.
-void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer, int nextOffset[], int nextLen[], int n_threads, int iter, int partitions[], double* localLists[], int id) {
+void gsortHelper(double* arr, double* localLists[], int localLen[], int n_threads, int partitions[], int id) {
     int local_id = n_threads % id;
-    int group_size = n_threads >> iter;
     int group_id = id / n_threads;
-    int group_start = group_id * group_size;
-
-    localLists[id] = arr + localOffset[id];
+    int group_start = group_id * n_threads;
 
     if (n_threads == 1) return;
 
     // a. Select pivot
     double pivot;
     if (local_id == 0) {
-        pivot = pivotFinderC(group_id, localLists, localLen, group_size);
+        pivot = pivotFinderC(group_id, localLists[id], localLen, n_threads);
     }
 
 #pragma omp barrier
@@ -106,24 +104,31 @@ void gsortHelper(double* arr, int localOffset[], int localLen[], double* buffer,
     double* right_list;
 
     // Exchanging information about lengths of lower and upper lists to be exchanged
-    if (id < pair_id) {
+    if (local_id < n_threads / 2) {
         // We receive lower list
         left_list = localLists[id];
         left_len = partitions[id];
-        right_list = localLists[pair_id];
-        right_len = partitions[pair_id];
+        right_list = localLists[id + n_threads / 2];
+        right_len = partitions[id + n_threads / 2];
     } else {
         // We receive higher list
         left_list = localLists[id] + partitions[id];
         left_len = localLen[id] - partitions[id];
-        right_list = localLists[pair_id] + partitions[pair_id];
-        right_len = localLen[pair_id] - partitions[pair_id];
+        right_list = localLists[id - n_threads / 2] + partitions[id - n_threads / 2];
+        right_len = localLen[id - n_threads / 2] - partitions[id - n_threads / 2];
     }
+
+    int new_len = left_len + right_len;
 
     // Recompute where the data lies in the buffer
 
     // Merging the data in the buffer
-    mergeData(buffer + nextOffset[id], left_list, left_len, right_list, right_len);
+    double* buffer = malloc(new_len * sizeof(double));
+    mergeData(buffer, left_list, left_len, right_list, right_len);
+    localLists[id] = buffer;
+
+    gsortHelper();
+    free(buffer);
 
 #pragma omp barrier
 }
