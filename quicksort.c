@@ -20,6 +20,17 @@ static double selectPivot(const double arr[], int length) {
     return arr[length / 2];
 }
 
+static double groupMedianPivot(int group_start, int group_size, double** localLists, int* localLen) {
+    double medians[group_size];
+    for (int i = 0; i < group_size; i++) {
+        int id = group_start + i;
+        medians[i] = selectPivot(localLists[id], localLen[id]);
+    }
+
+    qsort(medians, (size_t)group_size, sizeof(double), compare);
+    return (medians[group_size / 2 - 1] + medians[group_size / 2]) / 2.0;
+}
+
 // Lower bound search to find the split point around a pivot.
 static int findSplit(const double arr[], int length, double key) {
     int left = 0;
@@ -61,9 +72,10 @@ void gsortHelper(double arr[], int N, int n_threads, int id, double** localLists
     if (n_threads == 1) return;
     int local_id = id % n_threads;
     int group_id = id / n_threads;
+    int group_start = group_id * n_threads;
 
     if (local_id == 0) {
-        pivots[group_id] = selectPivot(localLists[id], localLen[id]);
+        pivots[group_id] = groupMedianPivot(group_start, n_threads, localLists, localLen);
     }
 
 #pragma omp barrier
