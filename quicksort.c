@@ -57,8 +57,8 @@ static void mergeData(double out[], const double left[], int left_len, const dou
     }
 }
 
-double* gsortHelper(double arr[], int N, int n_threads, int id, double** localLists, double** nextLists, int* localLen, int* nextLen, int* partitions, double* pivots) {
-    if (n_threads == 1) return 0;
+void gsortHelper(double arr[], int N, int n_threads, int id, double** localLists, double** nextLists, int* localLen, int* nextLen, int* partitions, double* pivots) {
+    if (n_threads == 1) return;
     int local_id = id % n_threads;
     int group_id = id / n_threads;
 
@@ -112,11 +112,11 @@ double* gsortHelper(double arr[], int N, int n_threads, int id, double** localLi
     gsortHelper(arr, N, n_threads / 2, id, localLists, nextLists, localLen, nextLen, partitions, pivots);
 }
 
-double* gsort(double arr[], int N, int n_threads) {
+void gsort(double arr[], int N, int n_threads) {
     // If we only have one thread (or tiny input), sort sequentially.
     if (N <= n_threads || n_threads <= 1) {
         seqSort(arr, N);
-        return arr;
+        return;
     }
 
     int block_size = N / n_threads;
@@ -170,6 +170,4 @@ double* gsort(double arr[], int N, int n_threads) {
     free(nextLen);
     free(partitions);
     free(pivots);
-
-    return arr;
 }

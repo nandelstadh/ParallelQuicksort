@@ -93,11 +93,7 @@ int main(int argc, char* argv[]) {
 
     // Sort list
     double time1 = get_wall_seconds();
-    double* sorted = gsort(list_to_sort, N, T);
-    if (sorted != list_to_sort) {
-        free(list_to_sort);
-        list_to_sort = sorted;
-    }
+    gsort(list_to_sort, N, T);
     /* seqSort(list_to_sort, N); */
     /* printf("Sorting list with length %d took %7.3f wall seconds.\n", N, get_wall_seconds() - time1); */
 
