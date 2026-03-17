@@ -1,6 +1,5 @@
 #include "quicksort.h"
 
-#include <math.h>
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,38 +15,15 @@ int compare(const void* a, const void* b) {
 // Wrapper for sequentially sorting lists
 void seqSort(double arr[], int N) { qsort(arr, N, sizeof(double), compare); }
 
-// Sets each pivot to the median of the data in the first processor of each group.
-void pivotFinderA(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
-    int id = group_size * group_id;
-    pivots[group_id] = localLists[id][localLen[id] / 2];
+static double selectPivot(const double arr[], int length) {
+    if (length <= 0) return 0.0;
+    return arr[length / 2];
 }
 
-// Mean of medians.
-void pivotFinderB(int group_id, double* localLists[], int localLen[], double pivots[], int group_size) {
-    double median = 0;
-    for (int i = 0; i < group_size; i++) {
-        int id = group_size * group_id + i;
-        median += localLists[id][localLen[id] / 2];
-    }
-    pivots[group_id] = median / group_size;
-}
-
-// Mean of middlemost medians.
-double pivotFinderC(int group_id, double localLists[], int localLen[], int group_size) {
-    double medians[group_size];
-    for (int i = 0; i < group_size; i++) {
-        int id = group_size * group_id + i;
-        // The choice of index here is clearly wrong, we need to think about how to do this when the recursive logic works
-        medians[i] = localLists[localLen[id] / 2];
-    }
-    qsort(medians, group_size, sizeof(double), compare);
-    return (medians[group_size / 2] + medians[group_size / 2 - 1]) / 2;
-}
-
-// Binary search to find pivot positions
-int binarySearch(double arr[], int start, int length, double key) {
-    int left = start;
-    int right = start + length;
+// Lower bound search to find the split point around a pivot.
+static int findSplit(const double arr[], int length, double key) {
+    int left = 0;
+    int right = length;
     while (left < right) {
         int mid = left + ((right - left) / 2);
 
@@ -61,80 +37,28 @@ int binarySearch(double arr[], int start, int length, double key) {
     return left;
 }
 
-// Merges two sorted lists into a sorted output buffer
-void mergeData(double m_buf[], double left_list[], int left_len, double right_list[], int right_len) {
+// Merges two sorted lists into a sorted output buffer.
+static void mergeData(double out[], const double left[], int left_len, const double right[], int right_len) {
     int a = 0;
     int b = 0;
     int out_len = left_len + right_len;
     for (int i = 0; i < out_len; i++) {
         if (a >= left_len)
-            m_buf[i] = right_list[b++];
+            out[i] = right[b++];
 
         else if (b >= right_len)
-            m_buf[i] = left_list[a++];
+            out[i] = left[a++];
 
-        else if (left_list[a] <= right_list[b])
-            m_buf[i] = left_list[a++];
+        else if (left[a] <= right[b])
+            out[i] = left[a++];
 
         else
-            m_buf[i] = right_list[b++];
+            out[i] = right[b++];
     }
-}
-
-// Helper function for one iteration inside the active gsort parallel region.
-void gsortHelper(double* arr, double* localLists[], int localLen[], int n_threads, int partitions[], int id) {
-    int local_id = n_threads % id;
-    int group_id = id / n_threads;
-    int group_start = group_id * n_threads;
-
-    if (n_threads == 1) return;
-
-    // a. Select pivot
-    double pivot;
-    if (local_id == 0) {
-        pivot = pivotFinderC(group_id, localLists[id], localLen, n_threads);
-    }
-
-#pragma omp barrier
-    partitions[id] = binarySearch(localLists[id], 0, localLen[id], pivot);
-#pragma omp barrier
-
-    int right_len, left_len;
-    double* left_list;
-    double* right_list;
-
-    // Exchanging information about lengths of lower and upper lists to be exchanged
-    if (local_id < n_threads / 2) {
-        // We receive lower list
-        left_list = localLists[id];
-        left_len = partitions[id];
-        right_list = localLists[id + n_threads / 2];
-        right_len = partitions[id + n_threads / 2];
-    } else {
-        // We receive higher list
-        left_list = localLists[id] + partitions[id];
-        left_len = localLen[id] - partitions[id];
-        right_list = localLists[id - n_threads / 2] + partitions[id - n_threads / 2];
-        right_len = localLen[id - n_threads / 2] - partitions[id - n_threads / 2];
-    }
-
-    int new_len = left_len + right_len;
-
-    // Recompute where the data lies in the buffer
-
-    // Merging the data in the buffer
-    double* buffer = malloc(new_len * sizeof(double));
-    mergeData(buffer, left_list, left_len, right_list, right_len);
-    localLists[id] = buffer;
-
-    gsortHelper();
-    free(buffer);
-
-#pragma omp barrier
 }
 
 double* gsort(double arr[], int N, int n_threads) {
-    // If we only have one thread, we sort sequentially
+    // If we only have one thread (or tiny input), sort sequentially.
     if (N <= n_threads || n_threads <= 1) {
         seqSort(arr, N);
         return arr;
@@ -142,22 +66,29 @@ double* gsort(double arr[], int N, int n_threads) {
 
     int block_size = N / n_threads;
     int remainder = N % n_threads;
-    int localOffsetA[n_threads], localOffsetB[n_threads], localLenA[n_threads], localLenB[n_threads];
-    int* localOffset = localOffsetA;
-    int* nextOffset = localOffsetB;
-    int* localLen = localLenA;
-    int* nextLen = localLenB;
-    int iterations = log2(n_threads);
-    int partitions[n_threads];
-    double* localLists[n_threads];
-    double pivots[n_threads];
+    int allocation_failed = 0;
 
-    double* temp = malloc(N * sizeof(double));
-    double* buffer = temp;
+    double** localLists = calloc((size_t)n_threads, sizeof(double*));
+    double** nextLists = calloc((size_t)n_threads, sizeof(double*));
+    int* localLen = calloc((size_t)n_threads, sizeof(int));
+    int* nextLen = calloc((size_t)n_threads, sizeof(int));
+    int* partitions = calloc((size_t)n_threads, sizeof(int));
+    double* pivots = calloc((size_t)n_threads, sizeof(double));
+
+    if (!localLists || !nextLists || !localLen || !nextLen || !partitions || !pivots) {
+        free(localLists);
+        free(nextLists);
+        free(localLen);
+        free(nextLen);
+        free(partitions);
+        free(pivots);
+        seqSort(arr, N);
+        return arr;
+    }
 
 #pragma omp parallel num_threads(n_threads)
     {
-        // Splitting lists evenly between threads
+        // Split list into near-equal contiguous chunks and sort each chunk locally.
         int id = omp_get_thread_num();
         int start, length;
         if (id < remainder) {
@@ -168,32 +99,129 @@ double* gsort(double arr[], int N, int n_threads) {
             length = block_size;
         }
 
-        // Sort each thread's local segment in-place.
-        localOffset[id] = start;
+        double* chunk = NULL;
+        if (length > 0) {
+            chunk = malloc((size_t)length * sizeof(double));
+            if (!chunk) {
+#pragma omp atomic write
+                allocation_failed = 1;
+            } else {
+                memcpy(chunk, arr + start, (size_t)length * sizeof(double));
+                seqSort(chunk, length);
+            }
+        }
+
+        localLists[id] = chunk;
         localLen[id] = length;
-        seqSort(arr + start, length);
 
-        // Perform one iteration of group split/merge inside this parallel region.
+#pragma omp barrier
 
-        // Set the src array to equal the dst array
-        /* double* tmpBuf = arr; */
-        /* arr = buffer; */
-        /* buffer = tmpBuf; */
-        /**/
-        /* // Change offsets */
-        /* int* tmpOffset = localOffset; */
-        /* localOffset = nextOffset; */
-        /* nextOffset = tmpOffset; */
-        /**/
-        /* // Change lengths */
-        /* int* tmpLen = localLen; */
-        /* localLen = nextLen; */
-        /* nextLen = tmpLen; */
+        for (int size = n_threads; size > 1; size /= 2) {
+            int failed_now;
+#pragma omp atomic read
+            failed_now = allocation_failed;
+
+            int local_id = id % size;
+            int group_id = id / size;
+
+            if (!failed_now && local_id == 0) {
+                pivots[group_id] = selectPivot(localLists[id], localLen[id]);
+            }
+
+#pragma omp barrier
+
+            if (!failed_now) {
+                partitions[id] = findSplit(localLists[id], localLen[id], pivots[group_id]);
+            }
+
+#pragma omp barrier
+
+            if (!failed_now) {
+                int partner = (local_id < size / 2) ? (id + size / 2) : (id - size / 2);
+                int my_split = partitions[id];
+                int partner_split = partitions[partner];
+
+                const double* left_part;
+                int left_len;
+                const double* right_part;
+                int right_len;
+
+                if (local_id < size / 2) {
+                    left_part = localLists[id];
+                    left_len = my_split;
+                    right_part = localLists[partner];
+                    right_len = partner_split;
+                } else {
+                    left_part = localLists[partner] + partner_split;
+                    left_len = localLen[partner] - partner_split;
+                    right_part = localLists[id] + my_split;
+                    right_len = localLen[id] - my_split;
+                }
+
+                int merged_len = left_len + right_len;
+                double* merged = NULL;
+                if (merged_len > 0) {
+                    merged = malloc((size_t)merged_len * sizeof(double));
+                    if (!merged) {
+#pragma omp atomic write
+                        allocation_failed = 1;
+                    } else {
+                        mergeData(merged, left_part, left_len, right_part, right_len);
+                    }
+                }
+
+                nextLists[id] = merged;
+                nextLen[id] = merged_len;
+            }
+
+#pragma omp barrier
+
+#pragma omp atomic read
+            failed_now = allocation_failed;
+
+            if (!failed_now) {
+                free(localLists[id]);
+                localLists[id] = nextLists[id];
+                localLen[id] = nextLen[id];
+            } else {
+                free(nextLists[id]);
+                nextLists[id] = NULL;
+                nextLen[id] = 0;
+            }
+
+#pragma omp barrier
+
+            if (failed_now) break;
+        }
     }
 
-    if (arr != temp) {
-        free(temp);
+    if (allocation_failed) {
+        for (int i = 0; i < n_threads; i++) free(localLists[i]);
+        free(localLists);
+        free(nextLists);
+        free(localLen);
+        free(nextLen);
+        free(partitions);
+        free(pivots);
+        seqSort(arr, N);
+        return arr;
     }
+
+    int write_pos = 0;
+    for (int i = 0; i < n_threads; i++) {
+        if (localLen[i] > 0) {
+            memcpy(arr + write_pos, localLists[i], (size_t)localLen[i] * sizeof(double));
+        }
+        write_pos += localLen[i];
+        free(localLists[i]);
+    }
+
+    free(localLists);
+    free(nextLists);
+    free(localLen);
+    free(nextLen);
+    free(partitions);
+    free(pivots);
 
     return arr;
 }
