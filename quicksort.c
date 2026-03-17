@@ -57,6 +57,61 @@ static void mergeData(double out[], const double left[], int left_len, const dou
     }
 }
 
+double* gsortHelper(double arr[], int N, int n_threads, int id, double** localLists, double** nextLists, int* localLen, int* nextLen, int* partitions, double* pivots) {
+    if (n_threads == 1) return 0;
+    int local_id = id % n_threads;
+    int group_id = id / n_threads;
+
+    pivots[group_id] = selectPivot(localLists[id], localLen[id]);
+
+#pragma omp barrier
+
+    partitions[id] = findSplit(localLists[id], localLen[id], pivots[group_id]);
+
+#pragma omp barrier
+
+    int partner = (local_id < n_threads / 2) ? (id + n_threads / 2) : (id - n_threads / 2);
+    int my_split = partitions[id];
+    int partner_split = partitions[partner];
+
+    const double* left_part;
+    int left_len;
+    const double* right_part;
+    int right_len;
+
+    if (local_id < n_threads / 2) {
+        left_part = localLists[id];
+        left_len = my_split;
+        right_part = localLists[partner];
+        right_len = partner_split;
+    } else {
+        left_part = localLists[partner] + partner_split;
+        left_len = localLen[partner] - partner_split;
+        right_part = localLists[id] + my_split;
+        right_len = localLen[id] - my_split;
+    }
+
+    int merged_len = left_len + right_len;
+    double* merged = NULL;
+    if (merged_len > 0) {
+        merged = malloc((size_t)merged_len * sizeof(double));
+        mergeData(merged, left_part, left_len, right_part, right_len);
+    }
+
+    nextLists[id] = merged;
+    nextLen[id] = merged_len;
+
+#pragma omp barrier
+
+    free(localLists[id]);
+    localLists[id] = nextLists[id];
+    localLen[id] = nextLen[id];
+
+#pragma omp barrier
+
+    gsortHelper(arr, N, n_threads / 2, id, localLists, nextLists, localLen, nextLen, partitions, pivots);
+}
+
 double* gsort(double arr[], int N, int n_threads) {
     // If we only have one thread (or tiny input), sort sequentially.
     if (N <= n_threads || n_threads <= 1) {
@@ -66,7 +121,6 @@ double* gsort(double arr[], int N, int n_threads) {
 
     int block_size = N / n_threads;
     int remainder = N % n_threads;
-    int allocation_failed = 0;
 
     double** localLists = calloc((size_t)n_threads, sizeof(double*));
     double** nextLists = calloc((size_t)n_threads, sizeof(double*));
@@ -74,17 +128,6 @@ double* gsort(double arr[], int N, int n_threads) {
     int* nextLen = calloc((size_t)n_threads, sizeof(int));
     int* partitions = calloc((size_t)n_threads, sizeof(int));
     double* pivots = calloc((size_t)n_threads, sizeof(double));
-
-    if (!localLists || !nextLists || !localLen || !nextLen || !partitions || !pivots) {
-        free(localLists);
-        free(nextLists);
-        free(localLen);
-        free(nextLen);
-        free(partitions);
-        free(pivots);
-        seqSort(arr, N);
-        return arr;
-    }
 
 #pragma omp parallel num_threads(n_threads)
     {
@@ -100,111 +143,16 @@ double* gsort(double arr[], int N, int n_threads) {
         }
 
         double* chunk = NULL;
-        if (length > 0) {
-            chunk = malloc((size_t)length * sizeof(double));
-            if (!chunk) {
-#pragma omp atomic write
-                allocation_failed = 1;
-            } else {
-                memcpy(chunk, arr + start, (size_t)length * sizeof(double));
-                seqSort(chunk, length);
-            }
-        }
+        chunk = malloc((size_t)length * sizeof(double));
+        memcpy(chunk, arr + start, (size_t)length * sizeof(double));
+        seqSort(chunk, length);
 
         localLists[id] = chunk;
         localLen[id] = length;
 
-#pragma omp barrier
-
-        for (int size = n_threads; size > 1; size /= 2) {
-            int failed_now;
-#pragma omp atomic read
-            failed_now = allocation_failed;
-
-            int local_id = id % size;
-            int group_id = id / size;
-
-            if (!failed_now && local_id == 0) {
-                pivots[group_id] = selectPivot(localLists[id], localLen[id]);
-            }
+        gsortHelper(arr, N, n_threads, id, localLists, nextLists, localLen, nextLen, partitions, pivots);
 
 #pragma omp barrier
-
-            if (!failed_now) {
-                partitions[id] = findSplit(localLists[id], localLen[id], pivots[group_id]);
-            }
-
-#pragma omp barrier
-
-            if (!failed_now) {
-                int partner = (local_id < size / 2) ? (id + size / 2) : (id - size / 2);
-                int my_split = partitions[id];
-                int partner_split = partitions[partner];
-
-                const double* left_part;
-                int left_len;
-                const double* right_part;
-                int right_len;
-
-                if (local_id < size / 2) {
-                    left_part = localLists[id];
-                    left_len = my_split;
-                    right_part = localLists[partner];
-                    right_len = partner_split;
-                } else {
-                    left_part = localLists[partner] + partner_split;
-                    left_len = localLen[partner] - partner_split;
-                    right_part = localLists[id] + my_split;
-                    right_len = localLen[id] - my_split;
-                }
-
-                int merged_len = left_len + right_len;
-                double* merged = NULL;
-                if (merged_len > 0) {
-                    merged = malloc((size_t)merged_len * sizeof(double));
-                    if (!merged) {
-#pragma omp atomic write
-                        allocation_failed = 1;
-                    } else {
-                        mergeData(merged, left_part, left_len, right_part, right_len);
-                    }
-                }
-
-                nextLists[id] = merged;
-                nextLen[id] = merged_len;
-            }
-
-#pragma omp barrier
-
-#pragma omp atomic read
-            failed_now = allocation_failed;
-
-            if (!failed_now) {
-                free(localLists[id]);
-                localLists[id] = nextLists[id];
-                localLen[id] = nextLen[id];
-            } else {
-                free(nextLists[id]);
-                nextLists[id] = NULL;
-                nextLen[id] = 0;
-            }
-
-#pragma omp barrier
-
-            if (failed_now) break;
-        }
-    }
-
-    if (allocation_failed) {
-        for (int i = 0; i < n_threads; i++) free(localLists[i]);
-        free(localLists);
-        free(nextLists);
-        free(localLen);
-        free(nextLen);
-        free(partitions);
-        free(pivots);
-        seqSort(arr, N);
-        return arr;
     }
 
     int write_pos = 0;
