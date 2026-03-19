@@ -66,6 +66,7 @@ static void mergeData(double out[], const double left[], int left_len, const dou
 static void gsortGroup(int n_threads, int group_start,
                        double** localLists, double** nextLists,
                        int* localLen, int* nextLen,
+                       int* localOwned,
                        int* partitions, double* pivots) {
     if (n_threads == 1) return;
 
@@ -118,9 +119,12 @@ static void gsortGroup(int n_threads, int group_start,
 
 #pragma omp barrier
 
-        free(localLists[id]);
+        if (localOwned[id]) {
+            free(localLists[id]);
+        }
         localLists[id] = nextLists[id];
         localLen[id] = nextLen[id];
+        localOwned[id] = 1;
     }
 
     int half = n_threads / 2;
@@ -129,10 +133,10 @@ static void gsortGroup(int n_threads, int group_start,
 #pragma omp parallel sections
     {
 #pragma omp section
-        gsortGroup(half, group_start, localLists, nextLists, localLen, nextLen, partitions, pivots);
+        gsortGroup(half, group_start, localLists, nextLists, localLen, nextLen, localOwned, partitions, pivots);
 
 #pragma omp section
-        gsortGroup(half, group_start + half, localLists, nextLists, localLen, nextLen, partitions, pivots);
+        gsortGroup(half, group_start + half, localLists, nextLists, localLen, nextLen, localOwned, partitions, pivots);
     }
 }
 
@@ -158,10 +162,12 @@ void gsort(double arr[], int N, int n_threads) {
     double** nextLists = (double**)calloc((size_t)n_threads, sizeof(double*));
     int* localLen = (int*)calloc((size_t)n_threads, sizeof(int));
     int* nextLen = (int*)calloc((size_t)n_threads, sizeof(int));
+    int* localOwned = (int*)calloc((size_t)n_threads, sizeof(int));
+    int* nextOwned = (int*)calloc((size_t)n_threads, sizeof(int));
     int* partitions = (int*)calloc((size_t)n_threads, sizeof(int));
     double* pivots = (double*)calloc((size_t)n_threads, sizeof(double));
 
-    // Initial local sorts (embarrassingly parallel)
+    // Initial local sorts
 #pragma omp parallel num_threads(n_threads)
     {
         int id = omp_get_thread_num();
@@ -175,16 +181,17 @@ void gsort(double arr[], int N, int n_threads) {
             length = block_size;
         }
 
-        double* chunk = (double*)malloc((size_t)length * sizeof(double));
-        memcpy(chunk, arr + start, (size_t)length * sizeof(double));
-        seqSort(chunk, length);
+        /* double* chunk = (double*)malloc((size_t)length * sizeof(double)); */
+        /* memcpy(chunk, arr + start, (size_t)length * sizeof(double)); */
+        seqSort(arr + start, length);
 
-        localLists[id] = chunk;
+        localLists[id] = arr + start;
         localLen[id] = length;
+        localOwned[id] = 0;
     }
 
     // Group-recursive global sort
-    gsortGroup(n_threads, 0, localLists, nextLists, localLen, nextLen, partitions, pivots);
+    gsortGroup(n_threads, 0, localLists, nextLists, localLen, nextLen, localOwned, partitions, pivots);
 
     // Gather back
     int write_pos = 0;
@@ -193,13 +200,17 @@ void gsort(double arr[], int N, int n_threads) {
             memcpy(arr + write_pos, localLists[i], (size_t)localLen[i] * sizeof(double));
         }
         write_pos += localLen[i];
-        free(localLists[i]);
+        if (localOwned[i]) {
+            free(localLists[i]);
+        }
     }
 
     free(localLists);
     free(nextLists);
     free(localLen);
     free(nextLen);
+    free(localOwned);
+    free(nextOwned);
     free(partitions);
     free(pivots);
 }
